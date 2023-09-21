@@ -4,6 +4,8 @@ import json
 import os
 import re
 import logging
+import schedule
+import time
 from getpass import getpass
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -12,11 +14,11 @@ from email.mime.application import MIMEApplication
 # Define constants for file paths and directories.
 FILE_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIRECTORY = os.path.join(FILE_DIRECTORY, 'Config')
-os.makedirs(CONFIG_DIRECTORY, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIRECTORY, 'config.json')
+os.makedirs(CONFIG_DIRECTORY, exist_ok=True)
 LOG_DIRECTORY = os.path.join(FILE_DIRECTORY, 'Logs')
-os.makedirs(LOG_DIRECTORY, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIRECTORY, 'Logs.log')
+os.makedirs(LOG_DIRECTORY, exist_ok=True)
 
 # Flags for controlling the printing of warnings and errors.
 error_flag = True
@@ -24,7 +26,47 @@ warning_flag = True
 
 def setup_logging():
     """Configure logging settings to save logs to a file."""
-    logging.basicConfig(filename=LOG_FILE, level=logging.INFO)
+    if not os.path.exists(LOG_FILE):
+        with open(LOG_FILE, 'w') as log_file:
+            log_file.write('')
+    
+    logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
+
+def setup_config():
+    """
+    Load or create a configuration JSON file, prompt the user for missing values, and update the JSON file.
+
+    This function checks if specific keys are present in the configuration JSON file. If any of these keys are missing,
+    the user is prompted to enter the missing values. The updated configuration is then saved to the JSON file.
+
+    Returns:
+        dict: The updated configuration as a dictionary.
+    """
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'w') as config_file:
+            json.dump({}, config_file)
+
+    with open(CONFIG_FILE, 'r') as config_file:
+        config = json.load(config_file)
+
+    config_keys = [
+        ('email_address', 'Enter your email address: '),
+        ('email_password', 'Enter your email password: '),
+        ('recipients_file', 'Enter the recipients file path: '),
+        ('subject', 'Enter the email subject: '),
+        ('message', 'Enter the email message/body: '),
+        ('attachment_path', 'Enter the file attachment path (optional, press Enter to skip): ')
+    ]
+
+    for key, prompt in config_keys:
+        if not config.get(key):
+            value = input(prompt)
+            config[key] = value
+
+            with open(CONFIG_FILE, 'w') as config_file:
+                json.dump(config, config_file, indent=4)
+
+    return config
 
 def get_recipients(filename):
     """
@@ -57,7 +99,7 @@ def get_recipients(filename):
 
         return recipient_addresses
     except FileNotFoundError:
-        log_error(f'Recipients file "{recipients_file}" not found.\n')
+        log_error(f'Recipients file "{filename}" not found.\n')
         return None
     except Exception as e:
         log_error(f'{e}\n')
@@ -98,25 +140,24 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
         Exception: If an unexpected error occurs during email sending.
     """
     try:
-        if not sender_address and not sender_password:
-            raise Exception(f'No email address and password found in "{CONFIG_FILE}".')
-
         if not check_email_format(sender_address):
-            raise Exception(f'Invalid gmail address format "{sender_address}", please edit the gmail address format in "{CONFIG_FILE}".')
+            raise Exception(f'Invalid gmail address format "{sender_address}", please edit the correct gmail address format in "{CONFIG_FILE}".')
 
         context = ssl.create_default_context()
 
         with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as gmail_server:
-            gmail_server.login(gmail_address, gmail_password)
+            gmail_server.login(sender_address, sender_password)
 
             for recipient_address in recipient_addresses:
-                msg = compose_email(sender, recipient, subject, message, attachment_path)
+                msg = compose_email(sender_address, recipient_address, subject, message, attachment_path)
 
                 if msg is not None:
-                    server.sendmail(sender, recipient, message.as_string())
+                    gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
                     log_success(f'Successfully sent email to "{recipient_address.strip()}"\n')
 
         return True
+    except FileExistsError as e:
+        log_error(f'{e}\n')
     except Exception as e:
         log_error(f'{e}\n')
         return False
@@ -139,26 +180,22 @@ def compose_email(email_address, recipient_address, subject, message, attachment
     Raises:
         FileExistsError: If the specified attachment file does not exist.
     """
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = email_address
-        msg['To'] = recipient_address
-        msg['Subject'] = subject
+    msg = MIMEMultipart()
+    msg['From'] = email_address
+    msg['To'] = recipient_address
+    msg['Subject'] = subject
 
-        msg.attach(MIMEText(message, 'plain'))
+    msg.attach(MIMEText(message, 'plain'))
 
-        if os.path.exists(attachment_path):
-            with open(attachment_path, 'rb') as attachment_file:
-                part = MIMEApplication(attachment_file.read(), Name=os.path.basename(attachment_path))
-                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
-                msg.attach(part)
-        elif not os.path.exists(attachment_path) and attachment_path is not '':
-            raise FileExistsError
+    if os.path.exists(attachment_path):
+        with open(attachment_path, 'rb') as attachment_file:
+            part = MIMEApplication(attachment_file.read(), Name=os.path.basename(attachment_path))
+            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
+            msg.attach(part)
+    elif not os.path.exists(attachment_path) and attachment_path != '':
+        raise FileExistsError(f'Attachment file "{attachment_path}" not found.')
 
-        return msg
-    except FileExistsError:
-        log_error(f'Attachment file "{attachment_path}" not found.\n')
-        return None
+    return msg
 
 def log_warning(message):
     """
@@ -213,21 +250,28 @@ def main(email_address, email_password, recipients_file, subject, message, attac
     """
     recipient_email_addresses = get_recipients(recipients_file)
 
-    if recipient_email_addresses:
+    if recipient_email_addresses is not None:
         success = send_email(email_address, email_password, recipient_email_addresses, subject, message, attachment_path)
 
+        if success:
+            print('Successfully sent emails.')
+        else:
+            print('Failed to send emails.')
 
 if __name__ == '__main__':
     setup_logging()
-
-    with open(CONFIG_FILE, 'r') as f:
-        config = json.load(f)
+    config = setup_config()
 
     email_address = config.get('email_address', '')
     email_password = config.get('email_password', '')
     recipients_file = config.get('recipients_file', '')
     subject = config.get('subject', '')
     message = config.get('message', '')
-    attachment_path = config.get('attachment_path')  # This can be empty
+    attachment_path = config.get('attachment_path')
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
+
+    schedule.every().day.at("17:27").do(main)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
