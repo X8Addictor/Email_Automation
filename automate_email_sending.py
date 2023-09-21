@@ -103,6 +103,15 @@ def setup_config(config):
         raise e
 
 def read_config_file():
+    """
+    Read and load the configuration from the JSON file.
+
+    Returns:
+        dict: The loaded configuration as a dictionary.
+
+    Raises:
+        json.JSONDecodeError: If there is an issue with decoding the JSON file.
+    """
     try:
         with open(CONFIG_FILE, 'r') as config_file:
             config = json.load(config_file)  
@@ -113,6 +122,15 @@ def read_config_file():
         return {}
 
 def write_config_file(config):
+    """
+    Write the configuration to the JSON file.
+
+    Args:
+        config (dict): The configuration to be written to the JSON file.
+
+    Raises:
+        Exception: If an unexpected error occurs during writing.
+    """
     try:
         with open(CONFIG_FILE, 'w') as config_file:
             json.dump(config, config_file, indent=4)
