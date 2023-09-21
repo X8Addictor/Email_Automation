@@ -50,16 +50,15 @@ def load_config():
     """
     try:
         if not os.path.exists(CONFIG_FILE):
-            config = setup_config()
+            config = setup_config({})
         else:
-            with open(CONFIG_FILE, 'r') as config_file:
-                config = json.load(config_file)  
+            config = read_config_file()
 
             required_fields = ['email_address', 'recipients_file', 'subject', 'message']
             missing_fields = [field for field in required_fields if field not in config]
 
             if missing_fields:
-                config = setup_config()
+                config = setup_config(config)
 
         return config
     except json.JSONDecodeError as e:
@@ -69,7 +68,7 @@ def load_config():
         log_error(f'{e}\n')
         return {}
 
-def setup_config():
+def setup_config(config):
     """
     Load or create a configuration JSON file, prompt the user for missing values, and update the JSON file.
 
@@ -80,8 +79,7 @@ def setup_config():
         dict: The updated configuration as a dictionary.
     """
     try:
-        with open(CONFIG_FILE, 'w') as config_file:
-            json.dump({}, config_file)
+        write_config_file(config)
 
         config_keys = [
             ('email_address', 'Enter your email address: '),
@@ -96,13 +94,28 @@ def setup_config():
                 value = input(prompt)
                 config[key] = value
 
-                with open(CONFIG_FILE, 'w') as config_file:
-                    json.dump(config, config_file, indent=4)
-
-        with open(CONFIG_FILE, 'r') as config_file:
-            config = json.load(config_file) 
+                
+        write_config_file(config)
+        config = read_config_file() 
 
         return config
+    except Exception as e:
+        raise e
+
+def read_config_file():
+    try:
+        with open(CONFIG_FILE, 'r') as config_file:
+            config = json.load(config_file)  
+
+        return config
+    except json.JSONDecodeError as e:
+        raise e
+        return {}
+
+def write_config_file(config):
+    try:
+        with open(CONFIG_FILE, 'w') as config_file:
+            json.dump(config, config_file, indent=4)
     except Exception as e:
         raise e
 
@@ -190,7 +203,7 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
                 msg = compose_email(sender_address, recipient_address, subject, message, attachment_path)
 
                 if msg is not None:
-                    gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
+                    #gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
                     log_success(f'Successfully sent email to "{recipient_address.strip()}"\n')
 
         return True
@@ -310,7 +323,7 @@ def my_scheduled_task():
     Note:
     - The scheduled task will run indefinitely until manually interrupted.
     """
-    schedule.every().day.at("9:00").do(main)
+    schedule.every().day.at("09:00").do(main)
 
     try:
         while True:
@@ -326,7 +339,7 @@ if __name__ == '__main__':
     config = load_config()
 
     email_address = config.get('email_address', '')
-    email_password = os.getenv('PASSWORD_EMAIL')
+    email_password = os.getenv('EMAIL_PASSWORD')
 
     if not email_password:
         email_password = getpass('Enter your email password: ')
@@ -338,4 +351,4 @@ if __name__ == '__main__':
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
 
-    my_scheduled_task()
+    #my_scheduled_task()
