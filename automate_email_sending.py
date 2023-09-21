@@ -32,6 +32,43 @@ def setup_logging():
     
     logging.basicConfig(filename=LOG_FILE, level=logging.INFO, format='%(asctime)s - %(levelname)s: %(message)s')
 
+def load_config():
+    """
+    Load the configuration from the JSON file or create a new configuration if not found.
+
+    This function checks if the configuration JSON file exists. If it exists, it attempts to load the configuration
+    from the file. If the file is missing or if any required configuration fields are absent, it invokes the 
+    `setup_config()` function to create and initialize a new configuration. If the JSON file is corrupted, it logs
+    an error and returns an empty dictionary.
+
+    Returns:
+        dict: The loaded or created configuration as a dictionary.
+
+    Raises:
+        json.JSONDecodeError: If there is an issue with decoding the JSON file.
+        Exception: If an unexpected error during process. 
+    """
+    try:
+        if not os.path.exists(CONFIG_FILE):
+            config = setup_config()
+        else:
+            with open(CONFIG_FILE, 'r') as config_file:
+                config = json.load(config_file)  
+
+            required_fields = ['email_address', 'recipients_file', 'subject', 'message']
+            missing_fields = [field for field in required_fields if field not in config]
+
+            if missing_fields:
+                config = setup_config()
+
+        return config
+    except json.JSONDecodeError as e:
+        log_error(f'Error decoding JSON in configuration file: {str(e)}')
+        return {}
+    except Exception as e:
+        log_error(f'{e}\n')
+        return {}
+
 def setup_config():
     """
     Load or create a configuration JSON file, prompt the user for missing values, and update the JSON file.
@@ -42,31 +79,32 @@ def setup_config():
     Returns:
         dict: The updated configuration as a dictionary.
     """
-    if not os.path.exists(CONFIG_FILE):
+    try:
         with open(CONFIG_FILE, 'w') as config_file:
             json.dump({}, config_file)
 
-    with open(CONFIG_FILE, 'r') as config_file:
-        config = json.load(config_file)
+        config_keys = [
+            ('email_address', 'Enter your email address: '),
+            ('recipients_file', 'Enter the recipients file path: '),
+            ('subject', 'Enter the email subject: '),
+            ('message', 'Enter the email message/body: '),
+            ('attachment_path', 'Enter the file attachment path (optional, press Enter to skip): ')
+        ]
 
-    config_keys = [
-        ('email_address', 'Enter your email address: '),
-        ('email_password', 'Enter your email password: '),
-        ('recipients_file', 'Enter the recipients file path: '),
-        ('subject', 'Enter the email subject: '),
-        ('message', 'Enter the email message/body: '),
-        ('attachment_path', 'Enter the file attachment path (optional, press Enter to skip): ')
-    ]
+        for key, prompt in config_keys:
+            if not config.get(key):
+                value = input(prompt)
+                config[key] = value
 
-    for key, prompt in config_keys:
-        if not config.get(key):
-            value = input(prompt)
-            config[key] = value
+                with open(CONFIG_FILE, 'w') as config_file:
+                    json.dump(config, config_file, indent=4)
 
-            with open(CONFIG_FILE, 'w') as config_file:
-                json.dump(config, config_file, indent=4)
+        with open(CONFIG_FILE, 'r') as config_file:
+            config = json.load(config_file) 
 
-    return config
+        return config
+    except Exception as e:
+        raise e
 
 def get_recipients(filename):
     """
@@ -95,7 +133,7 @@ def get_recipients(filename):
                     log_warning(f'Invalid email "{line.strip()}" in "{filename}".')
 
         if not recipient_addresses:
-            raise Exception(f'No valid email address(s) found in "{filename}".')
+            raise Exception(f'No valid email address(es) found in "{filename}".')
 
         return recipient_addresses
     except FileNotFoundError:
@@ -131,7 +169,7 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
         recipient_addresses (list): A list of recipient email addresses.
         subject (str): The email subject.
         message (str): The email body text.
-        attachment_path (str, optional): Path to an attachment file (default is None).
+        attachment_path (str, optional): Path to an attachment file (default is '').
 
     Returns:
         bool: True if the email was sent successfully, False otherwise.
@@ -180,22 +218,25 @@ def compose_email(email_address, recipient_address, subject, message, attachment
     Raises:
         FileExistsError: If the specified attachment file does not exist.
     """
-    msg = MIMEMultipart()
-    msg['From'] = email_address
-    msg['To'] = recipient_address
-    msg['Subject'] = subject
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = email_address
+        msg['To'] = recipient_address
+        msg['Subject'] = subject
 
-    msg.attach(MIMEText(message, 'plain'))
+        msg.attach(MIMEText(message, 'plain'))
 
-    if os.path.exists(attachment_path):
-        with open(attachment_path, 'rb') as attachment_file:
-            part = MIMEApplication(attachment_file.read(), Name=os.path.basename(attachment_path))
-            part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
-            msg.attach(part)
-    elif not os.path.exists(attachment_path) and attachment_path != '':
-        raise FileExistsError(f'Attachment file "{attachment_path}" not found.')
+        if os.path.exists(attachment_path):
+            with open(attachment_path, 'rb') as attachment_file:
+                part = MIMEApplication(attachment_file.read(), Name=os.path.basename(attachment_path))
+                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
+                msg.attach(part)
+        elif not os.path.exists(attachment_path) and attachment_path != '':
+            raise FileExistsError(f'Attachment file "{attachment_path}" not found.')
 
-    return msg
+        return msg
+    except FileExistsError as e:
+        raise e
 
 def log_warning(message):
     """
@@ -207,7 +248,7 @@ def log_warning(message):
     global warning_flag
 
     if warning_flag:
-        print(f'Warning: Invalid email address(es) found "{filename}", check "{LOG_FILE}" for more info.')
+        print(f'Warning: Invalid email address(es) found, check "{LOG_FILE}" for more info.')
         warning_flag = False
 
     logging.warning(message)    
@@ -258,12 +299,38 @@ def main(email_address, email_password, recipients_file, subject, message, attac
         else:
             print('Failed to send emails.')
 
+def my_scheduled_task():
+    """
+    Schedule and run a daily task at 9:00 AM using the 'schedule' library.
+
+    This function schedules the 'main' function to run daily at 9:00 AM and enters
+    an infinite loop to continuously check for pending scheduled tasks and run them.
+    It handles a KeyboardInterrupt (Ctrl+C) gracefully by printing an exit message.
+
+    Note:
+    - The scheduled task will run indefinitely until manually interrupted.
+    """
+    schedule.every().day.at("9:00").do(main)
+
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print('Script exiting...')
+    finally:
+        pass
+
 if __name__ == '__main__':
     setup_logging()
-    config = setup_config()
+    config = load_config()
 
     email_address = config.get('email_address', '')
-    email_password = config.get('email_password', '')
+    email_password = os.getenv('PASSWORD_EMAIL')
+
+    if not email_password:
+        email_password = getpass('Enter your email password: ')
+
     recipients_file = config.get('recipients_file', '')
     subject = config.get('subject', '')
     message = config.get('message', '')
@@ -271,7 +338,4 @@ if __name__ == '__main__':
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
 
-    schedule.every().day.at("17:27").do(main)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    my_scheduled_task()
