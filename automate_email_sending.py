@@ -385,4 +385,6 @@ if __name__ == '__main__':
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
 
-    my_scheduled_task()
+    time = input('Enter the time at which the daily task should run in the "HH:MM" format. Example: "09:00" for 9:00 AM.')
+
+    my_scheduled_task(time)
