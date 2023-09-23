@@ -386,4 +386,4 @@ if __name__ == '__main__':
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
 
-    my_scheduled_task(time)
+    my_scheduled_task(scheduled_time)
