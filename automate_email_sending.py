@@ -221,7 +221,7 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
                 msg = compose_email(sender_address, recipient_address, subject, message, attachment_path)
 
                 if msg is not None:
-                    # gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
+                    gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
                     log_success(f'Successfully sent email to "{recipient_address.strip()}"\n')
 
         return True
