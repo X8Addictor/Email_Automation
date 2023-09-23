@@ -221,7 +221,7 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
                 msg = compose_email(sender_address, recipient_address, subject, message, attachment_path)
 
                 if msg is not None:
-                    gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
+                    # gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
                     log_success(f'Successfully sent email to "{recipient_address.strip()}"\n')
 
         return True
@@ -382,9 +382,8 @@ if __name__ == '__main__':
     subject = config.get('subject', '')
     message = config.get('message', '')
     attachment_path = config.get('attachment_path')
+    time = input('Enter the time at which the daily task should run in the "HH:MM" format. Example: "09:00" for 9:00 AM.')
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
-
-    time = input('Enter the time at which the daily task should run in the "HH:MM" format. Example: "09:00" for 9:00 AM.')
 
     my_scheduled_task(time)
