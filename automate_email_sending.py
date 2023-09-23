@@ -338,7 +338,7 @@ def main(email_address, email_password, recipients_file, subject, message, attac
         else:
             print('Failed to send emails.')
 
-def my_scheduled_task(time):
+def my_scheduled_task(scheduled_time):
     """
     Schedule and run a daily task using the 'schedule' library.
 
@@ -356,7 +356,7 @@ def my_scheduled_task(time):
     - The scheduled task will run indefinitely until manually interrupted.
     """
     try:
-        schedule.every().day.at(time).do(main)
+        schedule.every().day.at(scheduled_time).do(main)
 
         while True:
             schedule.run_pending()
@@ -382,7 +382,7 @@ if __name__ == '__main__':
     subject = config.get('subject', '')
     message = config.get('message', '')
     attachment_path = config.get('attachment_path')
-    time = input('Enter the time at which the daily task should run in the "HH:MM" format. Example: "09:00" for 9:00 AM.')
+    scheduled_time = input('Enter the time at which the daily task should run in the "HH:MM" format. Example: "09:00" for 9:00 AM.')
 
     main(email_address, email_password, recipients_file, subject, message, attachment_path)
 
