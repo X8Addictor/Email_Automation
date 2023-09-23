@@ -86,7 +86,7 @@ def setup_config(config):
             ('recipients_file', 'Enter the recipients file path: '),
             ('subject', 'Enter the email subject: '),
             ('message', 'Enter the email message/body: '),
-            ('attachment_path', 'Enter the file attachment path (optional, press Enter to skip): ')
+            ('attachment_path', 'Enter the file/folder attachment path (optional, press Enter to skip): ')
         ]
 
         for key, prompt in config_keys:
@@ -185,7 +185,7 @@ def check_email_format(email_address):
         str: The valid email address.
         None: If the email address format is invalid.
     """
-    email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w{2,3}$'
+    email_pattern = re.compile(r"^[\w+-.]+@[a-z\d-]+(.[a-z\d-]+)*.[a-z]+$")
 
     if re.match(email_pattern, email_address):
         return email_address
@@ -221,11 +221,11 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
                 msg = compose_email(sender_address, recipient_address, subject, message, attachment_path)
 
                 if msg is not None:
-                    gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
+                    # gmail_server.sendmail(sender_address, recipient_address, msg.as_string())
                     log_success(f'Successfully sent email to "{recipient_address.strip()}"\n')
 
         return True
-    except FileExistsError as e:
+    except FileNotFoundError as e:
         log_error(f'{e}\n')
     except Exception as e:
         log_error(f'{e}\n')
@@ -233,21 +233,21 @@ def send_email(sender_address, sender_password, recipient_addresses, subject, me
         
 def compose_email(email_address, recipient_address, subject, message, attachment_path = ''):
     """
-    Compose an email message with optional attachments.
+    Compose an email message with optional attachment(s).
 
     Args:
         email_address (str): The sender's email address.
         recipient_address (str): The recipient's email address.
         subject (str): The email subject.
         message (str): The email body text.
-        attachment_path (str, optional): Path to an attachment file (default is None).
+        attachment_path (str, optional): Path to an attachment file or folder (default is None).
 
     Returns:
         email.message.Message: The composed email message.
         None: If an attachment file is specified but not found.
 
     Raises:
-        FileExistsError: If the specified attachment file does not exist.
+        FileNotFoundError: If the specified attachment file does not exist.
     """
     try:
         msg = MIMEMultipart()
@@ -257,16 +257,24 @@ def compose_email(email_address, recipient_address, subject, message, attachment
 
         msg.attach(MIMEText(message, 'plain'))
 
-        if os.path.exists(attachment_path):
+        if os.path.isfile(attachment_path):
             with open(attachment_path, 'rb') as attachment_file:
                 part = MIMEApplication(attachment_file.read(), Name=os.path.basename(attachment_path))
                 part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
                 msg.attach(part)
+        elif os.path.isdir(attachment_path):
+            for root, _, files in os.walk(attachment_path):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    with open(file_path, 'rb') as attachment_file:
+                        part = MIMEApplication(attachment_file.read(), Name=os.path.basename(file_path))
+                        part['Content-Disposition'] = f'attachment; filename="{os.path.basename(file_path)}"'
+                        msg.attach(part)
         elif not os.path.exists(attachment_path) and attachment_path != '':
-            raise FileExistsError(f'Attachment file "{attachment_path}" not found.')
+            raise FileNotFoundError(f'Attachment file "{attachment_path}" not found.')
 
         return msg
-    except FileExistsError as e:
+    except FileNotFoundError as e:
         raise e
 
 def log_warning(message):
@@ -330,25 +338,33 @@ def main(email_address, email_password, recipients_file, subject, message, attac
         else:
             print('Failed to send emails.')
 
-def my_scheduled_task():
+def my_scheduled_task(time):
     """
-    Schedule and run a daily task at 9:00 AM using the 'schedule' library.
+    Schedule and run a daily task using the 'schedule' library.
 
-    This function schedules the 'main' function to run daily at 9:00 AM and enters
+    This function schedules the 'main' function to run daily at the specified time and enters
     an infinite loop to continuously check for pending scheduled tasks and run them.
     It handles a KeyboardInterrupt (Ctrl+C) gracefully by printing an exit message.
+
+    Args:
+        time (str): The time at which the daily task should run in the 'HH:MM' format. Example: '09:00' for 9:00 AM.
+
+    Raises:
+        Exception: If an unexpected error occurs during email sending.
 
     Note:
     - The scheduled task will run indefinitely until manually interrupted.
     """
-    schedule.every().day.at("09:00").do(main)
-
     try:
+        schedule.every().day.at(time).do(main)
+
         while True:
             schedule.run_pending()
             time.sleep(1)
     except KeyboardInterrupt:
         print('Script exiting...')
+    except Exception as e:
+        log_error(f'{e}\n')
     finally:
         pass
 
